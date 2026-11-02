@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
 import android.graphics.Bitmap
-import android.view.View
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -13,6 +12,7 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import org.json.JSONObject
 
 /**
  * Protótipo de navegação e leitura assistida do AVA.
@@ -102,8 +102,7 @@ class MainActivity : Activity() {
               const hasVideo = !!document.querySelector('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
               const next = Array.from(document.querySelectorAll('button,a,[role="button"]'))
                 .find(e => /próximo|proximo|continuar|avançar|avancar/i.test(clean(e.innerText)));
-              const nextLabel = next ? clean(next.innerText) : '';
-              const result = {title, headings, paragraphs, hasVideo, nextLabel};
+              const result = {title, headings, paragraphs, hasVideo, nextLabel: next ? clean(next.innerText) : ''};
               AVAReader.onPageRead(JSON.stringify(result));
             })();
         """.trimIndent()
@@ -114,17 +113,51 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun onPageRead(json: String) {
             runOnUiThread {
-                val safeText = json
-                    .replace("\\u003C", "<")
-                    .replace("\\u003E", ">")
-                    .replace("\\u0026", "&")
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Leitura da página")
-                    .setMessage("O aplicativo identificou os elementos do conteúdo.\n\n" +
-                        "Dados extraídos da página:\n$safeText\n\n" +
-                        "Este recurso organiza informações visíveis. Ele não responde nem envia avaliações.")
-                    .setPositiveButton("Fechar", null)
-                    .show()
+                try {
+                    val data = JSONObject(json)
+                    val title = data.optString("title", "Página sem título")
+                    val headings = data.optJSONArray("headings")
+                    val paragraphs = data.optJSONArray("paragraphs")
+                    val text = StringBuilder(title).append("\n\n")
+
+                    if (headings != null && headings.length() > 0) {
+                        text.append("Tópicos identificados:\n")
+                        for (i in 0 until headings.length()) {
+                            text.append("• ").append(headings.optString(i)).append("\n")
+                        }
+                        text.append("\n")
+                    }
+
+                    if (paragraphs != null && paragraphs.length() > 0) {
+                        text.append("Texto encontrado:\n")
+                        for (i in 0 until paragraphs.length()) {
+                            text.append(paragraphs.optString(i)).append("\n\n")
+                        }
+                    } else {
+                        text.append("Não encontrei parágrafos de texto nesta página. ")
+                        text.append("Pode ser um vídeo, uma atividade ou um conteúdo carregado de outra forma.\n\n")
+                    }
+
+                    text.append("Vídeo detectado: ")
+                        .append(if (data.optBoolean("hasVideo")) "sim" else "não")
+                    val nextLabel = data.optString("nextLabel")
+                    if (nextLabel.isNotBlank()) text.append("\nBotão de avanço: ").append(nextLabel)
+
+                    text.append("\n\nA leitura apenas organiza elementos visíveis. ")
+                        .append("O aplicativo não responde nem envia avaliações.")
+
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Leitura assistida")
+                        .setMessage(text.toString())
+                        .setPositiveButton("Fechar", null)
+                        .show()
+                } catch (_: Exception) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Leitura assistida")
+                        .setMessage("Não foi possível interpretar esta página. Tente novamente após o conteúdo terminar de carregar.")
+                        .setPositiveButton("Fechar", null)
+                        .show()
+                }
             }
         }
     }
