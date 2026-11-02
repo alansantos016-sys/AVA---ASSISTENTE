@@ -2,6 +2,9 @@ package br.com.avaassistente
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.graphics.Bitmap
 import android.webkit.CookieManager
@@ -10,6 +13,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONObject
@@ -24,6 +28,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
 
     private val avaUrl = "https://www.anhanguera.com/aluno/ava/login"
+    private val prefs by lazy { getSharedPreferences("study_notes", Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +65,10 @@ class MainActivity : Activity() {
             text = "Identificar conteúdo da página"
             setOnClickListener { readPageContent() }
         })
+        root.addView(Button(this).apply {
+            text = "Caderno de estudos"
+            setOnClickListener { openStudyNotebook() }
+        })
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -72,7 +81,7 @@ class MainActivity : Activity() {
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    status.text = "Página aberta • Use “Identificar conteúdo” para leitura assistida"
+                    status.text = "Página aberta • Leitura assistida e caderno disponíveis"
                 }
             }
             webChromeClient = WebChromeClient()
@@ -88,6 +97,43 @@ class MainActivity : Activity() {
         } else {
             webView.loadUrl(avaUrl)
         }
+    }
+
+    private fun openStudyNotebook() {
+        val editor = EditText(this).apply {
+            hint = "Cole aqui o texto da aula ou escreva suas anotações…"
+            setText(prefs.getString("notes", ""))
+            minLines = 8
+            maxLines = 18
+            setPadding(28, 20, 28, 20)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Caderno de estudos")
+            .setMessage("As anotações ficam salvas localmente neste aparelho.")
+            .setView(editor)
+            .setPositiveButton("Salvar", null)
+            .setNegativeButton("Fechar", null)
+            .setNeutralButton("Copiar pedido de resumo", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                prefs.edit().putString("notes", editor.text.toString()).apply()
+                status.text = "Anotações salvas neste aparelho"
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val studyPrompt = "Com base no material abaixo, produza um resumo organizado para estudo. " +
+                    "Explique os conceitos com clareza, diferencie termos semelhantes, apresente exemplos " +
+                    "e finalize com 5 perguntas de revisão com gabarito comentado. Não invente conteúdo.\n\n" +
+                    editor.text.toString()
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Material para resumo", studyPrompt))
+                status.text = "Pedido de resumo copiado. Cole em uma ferramenta de IA para estudar."
+            }
+        }
+        dialog.show()
     }
 
     private fun readPageContent() {
@@ -149,7 +195,12 @@ class MainActivity : Activity() {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle("Leitura assistida")
                         .setMessage(text.toString())
-                        .setPositiveButton("Fechar", null)
+                        .setPositiveButton("Copiar texto") { _, _ ->
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Conteúdo AVA", text.toString()))
+                            status.text = "Texto identificado copiado para a área de transferência"
+                        }
+                        .setNegativeButton("Fechar", null)
                         .show()
                 } catch (_: Exception) {
                     AlertDialog.Builder(this@MainActivity)
