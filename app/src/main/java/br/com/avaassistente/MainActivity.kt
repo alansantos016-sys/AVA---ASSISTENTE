@@ -168,7 +168,26 @@ class MainActivity : Activity() {
                   Array.from(doc.querySelectorAll('main p, article p, p, [role="main"] p'))
                     .map(e => clean(e.innerText)).filter(usefulText)
                 );
-                hasVideo = hasVideo || !!doc.querySelector('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
+                // Reconhece players HTML5, iframes e players incorporados de plataformas educacionais.
+                const videoSelectors = [
+                  'video', 'audio',
+                  'iframe[src*="youtube"]', 'iframe[src*="youtu.be"]',
+                  'iframe[src*="vimeo"]', 'iframe[src*="wistia"]',
+                  'iframe[src*="jwplayer"]', 'iframe[src*="brightcove"]',
+                  'iframe[src*="kaltura"]', 'iframe[src*="media"]',
+                  '[data-video]', '[data-player]', '[class*="video-player"]',
+                  '[class*="videoplayer"]', '[class*="videoPlayer"]',
+                  '[class*="player-container"]', '[class*="playerContainer"]',
+                  '[id*="player"]', '[id*="video"]',
+                  '[aria-label*="reproduzir" i]', '[aria-label*="play" i]',
+                  '[title*="reproduzir" i]', '[title*="play" i]'
+                ].join(',');
+                const playerElement = doc.querySelector(videoSelectors);
+                const mediaControl = doc.querySelector(
+                  '[class*="play-button"], [class*="playButton"], [class*="video-control"], ' +
+                  'button[aria-label*="play" i], button[aria-label*="reproduzir" i]'
+                );
+                hasVideo = hasVideo || !!playerElement || !!mediaControl;
                 if (!nextLabel) {
                   const next = Array.from(doc.querySelectorAll('button,a,[role="button"]'))
                     .find(e => /próximo|proximo|continuar|avançar|avancar/i.test(clean(e.innerText)));
