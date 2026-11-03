@@ -114,28 +114,51 @@ class MainActivity : Activity() {
     }
 
     private fun startVideoAutomation() {
+        // Reexamina por alguns segundos: o AVA pode inserir o player após o carregamento.
         val script = """
             (function() {
-              const videos = Array.from(document.querySelectorAll('video'));
-              if (!videos.length) {
-                AVAVideo.onStatus('Não encontrei player de vídeo HTML5. Players incorporados podem não permitir controle automático.');
-                return;
+              if (window.__avaVideoScanTimer) clearInterval(window.__avaVideoScanTimer);
+              let attempts = 0;
+              function findVideo(doc, depth) {
+                if (!doc || depth > 4) return null;
+                const found = Array.from(doc.querySelectorAll('video')).find(v => !v.ended);
+                if (found) return found;
+                for (const frame of Array.from(doc.querySelectorAll('iframe'))) {
+                  try {
+                    const child = frame.contentDocument;
+                    if (child) { const nested = findVideo(child, depth + 1); if (nested) return nested; }
+                  } catch (_) { /* iframe de outro domínio: inacessível por segurança */ }
+                }
+                return null;
               }
-              const video = videos.find(v => !v.ended) || videos[0];
-              if (!video.dataset.avaAssistenteBound) {
-                video.dataset.avaAssistenteBound = '1';
-                video.addEventListener('ended', function() { AVAVideo.onVideoEnded(); }, {once: true});
+              function scan() {
+                attempts++;
+                const video = findVideo(document, 0);
+                if (video) {
+                  clearInterval(window.__avaVideoScanTimer); window.__avaVideoScanTimer = null;
+                  if (!video.dataset.avaAssistenteBound) {
+                    video.dataset.avaAssistenteBound = '1';
+                    video.addEventListener('ended', function() { AVAVideo.onVideoEnded(); }, {once: true});
+                  }
+                  if (video.paused) {
+                    const p = video.play();
+                    if (p && p.catch) p.catch(function() { AVAVideo.onStatus('O player bloqueou o início automático. Toque em play; aguardarei o fim.'); });
+                  }
+                  AVAVideo.onStatus('Player localizado. Aguardando o vídeo terminar para avançar.');
+                  return;
+                }
+                if (attempts >= 10) {
+                  clearInterval(window.__avaVideoScanTimer); window.__avaVideoScanTimer = null;
+                  const embedded = document.querySelector('iframe[src], [data-player], [class*="video-player"], [id*="player"]');
+                  AVAVideo.onStatus(embedded ? 'Player incorporado encontrado, mas seu controle está limitado. Inicie manualmente; o avanço automático pode não funcionar.' : 'Não localizei vídeo nesta tela. Abra a videoaula e tente novamente.');
+                }
               }
-              const p = video.play();
-              if (p && p.catch) p.catch(function() {
-                AVAVideo.onStatus('O navegador bloqueou o play automático. Toque em play; o app aguardará o término.');
-              });
-              AVAVideo.onStatus('Vídeo iniciado. Aguardando o término para avançar.');
+              scan();
+              if (window.__avaVideoScanTimer !== null && attempts < 10) window.__avaVideoScanTimer = setInterval(scan, 1500);
             })();
         """.trimIndent()
         webView.evaluateJavascript(script, null)
     }
-
     private fun advanceToNextMaterial() {
         val script = """
             (function() {
