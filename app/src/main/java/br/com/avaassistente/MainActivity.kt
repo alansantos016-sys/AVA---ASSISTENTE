@@ -26,6 +26,8 @@ import org.json.JSONObject
 class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var status: TextView
+    private lateinit var autoButton: Button
+    private var autoVideoMode = false
 
     private val avaUrl = "https://www.anhanguera.com/aluno/ava/login"
     private val prefs by lazy { getSharedPreferences("study_notes", Context.MODE_PRIVATE) }
@@ -59,6 +61,16 @@ class MainActivity : Activity() {
             text = "Atualizar"
             setOnClickListener { webView.reload() }
         })
+        autoButton = Button(this).apply {
+            text = "Reproduzir e avançar: DESLIGADO"
+            setOnClickListener {
+                autoVideoMode = !autoVideoMode
+                text = if (autoVideoMode) "Reproduzir e avançar: LIGADO" else "Reproduzir e avançar: DESLIGADO"
+                status.text = if (autoVideoMode) "Modo automático ligado. Abra um material com vídeo." else "Modo automático desligado."
+                if (autoVideoMode) startVideoAutomation()
+            }
+        }
+        root.addView(autoButton)
         root.addView(toolbar)
 
         root.addView(Button(this).apply {
@@ -75,6 +87,7 @@ class MainActivity : Activity() {
             settings.domStorageEnabled = true
             settings.javaScriptCanOpenWindowsAutomatically = false
             addJavascriptInterface(PageReader(), "AVAReader")
+            addJavascriptInterface(VideoAutomation(), "AVAVideo")
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     status.text = "Carregando página do AVA…"
@@ -82,6 +95,7 @@ class MainActivity : Activity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     status.text = "Página aberta • Leitura assistida e caderno disponíveis"
+                    if (autoVideoMode) startVideoAutomation()
                 }
             }
             webChromeClient = WebChromeClient()
@@ -96,6 +110,53 @@ class MainActivity : Activity() {
             webView.restoreState(savedInstanceState)
         } else {
             webView.loadUrl(avaUrl)
+        }
+    }
+
+    private fun startVideoAutomation() {
+        val script = """
+            (function() {
+              const videos = Array.from(document.querySelectorAll('video'));
+              if (!videos.length) {
+                AVAVideo.onStatus('Não encontrei player de vídeo HTML5. Players incorporados podem não permitir controle automático.');
+                return;
+              }
+              const video = videos.find(v => !v.ended) || videos[0];
+              if (!video.dataset.avaAssistenteBound) {
+                video.dataset.avaAssistenteBound = '1';
+                video.addEventListener('ended', function() { AVAVideo.onVideoEnded(); }, {once: true});
+              }
+              const p = video.play();
+              if (p && p.catch) p.catch(function() {
+                AVAVideo.onStatus('O navegador bloqueou o play automático. Toque em play; o app aguardará o término.');
+              });
+              AVAVideo.onStatus('Vídeo iniciado. Aguardando o término para avançar.');
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script, null)
+    }
+
+    private fun advanceToNextMaterial() {
+        val script = """
+            (function() {
+              const clean = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+              const candidates = Array.from(document.querySelectorAll('button,a,[role="button"]'));
+              const next = candidates.find(e => /^(próximo|proximo|continuar|avançar|avancar)$/.test(clean(e.innerText || e.getAttribute('aria-label'))));
+              if (next && !next.disabled) { next.click(); return 'Avançando para o próximo material.'; }
+              return 'Vídeo terminou, mas não encontrei um botão Próximo habilitado.';
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(script) { result -> runOnUiThread { status.text = result?.trim('"') ?: "Vídeo terminou." } }
+    }
+
+    private inner class VideoAutomation {
+        @JavascriptInterface
+        fun onVideoEnded() {
+            runOnUiThread { if (autoVideoMode) advanceToNextMaterial() }
+        }
+        @JavascriptInterface
+        fun onStatus(message: String) {
+            runOnUiThread { if (autoVideoMode) status.text = message }
         }
     }
 
