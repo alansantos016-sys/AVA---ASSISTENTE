@@ -152,6 +152,8 @@ class MainActivity : Activity() {
               let paragraphs = [];
               let hasVideo = false;
               let nextLabel = '';
+              const isInterfaceText = s => /tenha uma experiência mais completa|utilize o app anhanguera aluno|ir para app|texto identificado copiado|abrir ava|identificar conteúdo da página|caderno de estudos|voltar|atualizar/i.test(s);
+              const usefulText = s => clean(s).length > 55 && !isInterfaceText(clean(s));
 
               docs.forEach(doc => {
                 if (!title || title === clean(document.title)) {
@@ -164,7 +166,7 @@ class MainActivity : Activity() {
                 );
                 paragraphs = paragraphs.concat(
                   Array.from(doc.querySelectorAll('main p, article p, p, [role="main"] p'))
-                    .map(e => clean(e.innerText)).filter(s => s.length > 35)
+                    .map(e => clean(e.innerText)).filter(usefulText)
                 );
                 hasVideo = hasVideo || !!doc.querySelector('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
                 if (!nextLabel) {
