@@ -140,15 +140,57 @@ class MainActivity : Activity() {
         val script = """
             (function() {
               const clean = s => (s || '').replace(/\\s+/g, ' ').trim();
-              const title = clean(document.title);
-              const headings = Array.from(document.querySelectorAll('h1,h2,h3'))
-                .map(e => clean(e.innerText)).filter(Boolean).slice(0, 18);
-              const paragraphs = Array.from(document.querySelectorAll('main p, article p, p'))
-                .map(e => clean(e.innerText)).filter(s => s.length > 35).slice(0, 35);
-              const hasVideo = !!document.querySelector('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
-              const next = Array.from(document.querySelectorAll('button,a,[role="button"]'))
-                .find(e => /próximo|proximo|continuar|avançar|avancar/i.test(clean(e.innerText)));
-              const result = {title, headings, paragraphs, hasVideo, nextLabel: next ? clean(next.innerText) : ''};
+              const docs = [document];
+              Array.from(document.querySelectorAll('iframe')).forEach(frame => {
+                try {
+                  if (frame.contentDocument) docs.push(frame.contentDocument);
+                } catch (_) {}
+              });
+
+              let title = clean(document.title);
+              let headings = [];
+              let paragraphs = [];
+              let hasVideo = false;
+              let nextLabel = '';
+
+              docs.forEach(doc => {
+                if (!title || title === clean(document.title)) {
+                  const h = doc.querySelector('h1');
+                  if (h && clean(h.innerText)) title = clean(h.innerText);
+                }
+                headings = headings.concat(
+                  Array.from(doc.querySelectorAll('h1,h2,h3'))
+                    .map(e => clean(e.innerText)).filter(Boolean)
+                );
+                paragraphs = paragraphs.concat(
+                  Array.from(doc.querySelectorAll('main p, article p, p, [role="main"] p'))
+                    .map(e => clean(e.innerText)).filter(s => s.length > 35)
+                );
+                hasVideo = hasVideo || !!doc.querySelector('video, iframe[src*="youtube"], iframe[src*="vimeo"]');
+                if (!nextLabel) {
+                  const next = Array.from(doc.querySelectorAll('button,a,[role="button"]'))
+                    .find(e => /próximo|proximo|continuar|avançar|avancar/i.test(clean(e.innerText)));
+                  if (next) nextLabel = clean(next.innerText);
+                }
+              });
+
+              headings = Array.from(new Set(headings)).slice(0, 24);
+              paragraphs = Array.from(new Set(paragraphs)).slice(0, 60);
+
+              // Fallback: alguns materiais usam blocos div em vez de tags <p>.
+              if (paragraphs.length === 0) {
+                docs.forEach(doc => {
+                  const blocks = Array.from(doc.querySelectorAll('main div, article div, [role="main"] div'))
+                    .map(e => clean(e.innerText))
+                    .filter(s => s.length > 80 && s.length < 2500);
+                  paragraphs = paragraphs.concat(blocks);
+                });
+                paragraphs = Array.from(new Set(paragraphs))
+                  .filter((s, i, all) => !all.some(other => other !== s && other.length > s.length && other.includes(s)))
+                  .slice(0, 35);
+              }
+
+              const result = {title, headings, paragraphs, hasVideo, nextLabel};
               AVAReader.onPageRead(JSON.stringify(result));
             })();
         """.trimIndent()
